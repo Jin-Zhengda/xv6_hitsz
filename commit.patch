@@ -1,0 +1,190 @@
+diff --git a/Makefile b/Makefile
+index b971308..3ef0516 100644
+--- a/Makefile
++++ b/Makefile
+@@ -157,6 +157,9 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
++	$U/_sleep\
++	$U/_pingpong\
++	$U/_find\
+ 
+ 
+ ifeq ($(LAB),syscall)
+diff --git a/commands.gdb b/commands.gdb
+new file mode 100644
+index 0000000..95238c2
+--- /dev/null
++++ b/commands.gdb
+@@ -0,0 +1,6 @@
++b trap.c:55
++c
++p cpus[$tp]->proc->name
++n
++p cpus[$tp]->proc->name
++da
+\ No newline at end of file
+diff --git a/user/find.c b/user/find.c
+new file mode 100644
+index 0000000..a62f033
+--- /dev/null
++++ b/user/find.c
+@@ -0,0 +1,86 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++#include "kernel/fs.h"
++#include "kernel/fcntl.h"
++
++#define MAX_PATH 512
++
++void find(char *current_dir, const char *file_name) {
++    char buf[MAX_PATH];
++    int fd;
++    struct dirent de;
++    struct stat st;
++
++    // try to open dir
++    if ((fd = open(current_dir, O_RDONLY)) < 0) {
++        fprintf(2, "find: cannot open %s\n", current_dir);
++        return;
++    }
++
++    // try to get fd's stat
++    if (fstat(fd, &st) < 0) {
++        fprintf(2, "find: cannot stat %s\n", current_dir);
++        close(fd);
++        return;
++    }
++
++    // when fd isn't dir, return
++    if (st.type != T_DIR) {
++        close(fd);
++        return;
++    }
++
++    // judge whether the dir's len is over
++    int dir_len = strlen(current_dir);
++    if (dir_len + 1 + DIRSIZ + 1 > MAX_PATH) {
++        fprintf(2, "find: path too long\n");
++        close(fd);
++        return;
++    }
++
++    // construct "dir/"
++    strcpy(buf, current_dir);
++    char *p = buf + dir_len;
++    *p++ = '/';
++
++    // use a loop to get all the files under the dir
++    while (read(fd, &de, sizeof(de)) == sizeof(de)) {
++        if (de.inum == 0) continue;
++        // when dir is "." or "..", don't do recursion
++        if (strcmp(de.name, ".") == 0 || strcmp(de.name, "..") == 0) continue;
++
++        // get the file's path
++        memmove(p, de.name, DIRSIZ);
++        p[DIRSIZ] = 0;
++
++        // try to get the file's stat
++        if (stat(buf, &st) < 0) {
++            fprintf(2, "find: cannot stat %s\n", buf);
++            continue;
++        }
++
++        // if the file is a file, compare and print the result, 
++        // if the file is a dir, judge whether recursion should be done.
++        if (st.type == T_FILE && strcmp(de.name, file_name) == 0) {
++            printf("%s\n", buf);
++        } else if (st.type == T_DIR) {
++            if (strcmp(de.name, file_name) == 0) {
++                printf("%s\n", buf);
++            }
++            find(buf, file_name);
++        }
++    }
++
++    close(fd);
++}
++
++int main(int argc, char *argv[]) {
++    if (argc != 3) {
++        fprintf(2, "Usage: find <directory> <filename>\n");
++        exit(1);
++    }
++    find(argv[1], argv[2]);
++    exit(0);
++}
+\ No newline at end of file
+diff --git a/user/pingpong.c b/user/pingpong.c
+new file mode 100644
+index 0000000..fac0410
+--- /dev/null
++++ b/user/pingpong.c
+@@ -0,0 +1,44 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++
++
++int main(void) {
++    int p1[2], p2[2];
++    char p_read[5], c_read[5];
++
++    pipe(p1);
++    pipe(p2);
++
++    int parent_pid = getpid();
++    int child_pid = fork();
++
++
++    if (child_pid == 0) {
++        close(p1[1]);
++        close(p2[0]);
++
++        read(p1[0], &c_read, 4);
++        int child_pid = getpid();
++        if (strcmp(c_read, "ping") == 0) {
++            write(p2[1], "pong", 4);
++            printf("%d: received ping from pid %d\n", child_pid, parent_pid);
++            close(p1[0]);
++            close(p2[1]);
++            exit(0);
++        }
++    } else {
++        close(p1[0]);
++        close(p2[1]);
++
++        write(p1[1], "ping", 4);
++        read(p2[0], &p_read, 4);
++        wait(0);
++        if (strcmp(p_read, "pong") == 0) {
++            printf("%d: received pong from pid %d\n", parent_pid, child_pid);
++            close(p1[1]);
++            close(p2[0]);
++            exit(0);
++        }
++    }
++}
+\ No newline at end of file
+diff --git a/user/sleep.c b/user/sleep.c
+new file mode 100644
+index 0000000..5226226
+--- /dev/null
++++ b/user/sleep.c
+@@ -0,0 +1,13 @@
++#include "kernel/types.h"
++#include "user/user.h"
++
++
++int main(int argc, char* argv[]) {
++    if (argc != 2) {
++        fprintf(2, "Usage: sleep <number>\n");
++        exit(1);
++    }
++    sleep(atoi(argv[1]));
++    printf("Nothoing happends for a little while\n");
++    exit(0);
++}
+\ No newline at end of file

@@ -67,9 +67,8 @@ void find(char *current_dir, const char *file_name) {
         } else if (st.type == T_DIR) {
             if (strcmp(de.name, file_name) == 0) {
                 printf("%s\n", buf);
-            } else {
-                find(buf, file_name);
-            } 
+            }
+            find(buf, file_name); 
         }
     }
 
