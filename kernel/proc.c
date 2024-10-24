@@ -488,17 +488,6 @@ void sched(void) {
 void yield(void) {
   // get current proc state
   struct proc *p = myproc();
-  // printf("Save the context of the process to the memory region from address %p to %p\n", 
-  //       p->context.sp, p->context.sp + sizeof(struct context));
-  // printf("Current running process pid is %d and user pc is %p\n", p->pid, p->trapframe->epc);
-  // // get the next proc which will be running
-  // for (struct proc *c = proc; c < &proc[NPROC]; c++) {
-  //   acquire(&c->lock);
-  //   if (c->state == RUNNABLE) {
-  //     printf("Next runnable process pid is %d and user pc is %p\n", c->pid, c->trapframe->epc);
-  //   }
-  //   release(&c->lock); 
-  // }
   acquire(&p->lock);
   p->state = RUNNABLE;
   sched();
