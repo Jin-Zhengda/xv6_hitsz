@@ -87,6 +87,18 @@ uint64 sys_rename(void) {
 
 // sys_yield, only call yiled in proc.c
 uint64 sys_yield(void) {
+  struct proc* p = myproc();
+  printf("Save the context of the process to the memory region from address %p to %p\n", 
+        p->context.sp, p->context.sp + sizeof(struct context));
+  printf("Current running process pid is %d and user pc is %p\n", p->pid, p->trapframe->epc);
+  // get the next proc which will be running
+  for (struct proc *c = proc; c < &proc[NPROC]; c++) {
+    acquire(&c->lock);
+    if (c->state == RUNNABLE) {
+      printf("Next runnable process pid is %d and user pc is %p\n", c->pid, c->trapframe->epc);
+    }
+    release(&c->lock); 
+  }
   yield();
   return 0;
 }
