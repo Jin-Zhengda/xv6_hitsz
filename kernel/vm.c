@@ -379,3 +379,50 @@ int test_pagetable() {
   printf("test_pagetable: %d\n", satp != gsatp);
   return satp != gsatp;
 }
+
+
+void get_pte_flags(char* flags) {
+  if (PTE_R) flags[0] = 'r';
+  else flags[0] = '-';
+
+  if (PTE_W) flags[1] = 'w';
+  else flags[1] = '-';
+  
+
+  if (PTE_X) flags[2] = 'x';
+  else flags[2] = '-';
+
+
+  if (PTE_U) flags[3] = 'u';
+  else flags[3] = '-';
+}
+
+
+void vmprint(pagetable_t pgtbl) {
+  printf("page table %p\n", pgtbl);
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pgtbl[i];
+    if (pte & PTE_V) {
+      pagetable_t child = (pagetable_t)PTE2PA(pte);
+      printf("||idx: %d: pa: %p, flags: %s\n", i, child, "----");
+      for (int j = 0; j < 512; j++) {
+        pte_t child_pte = child[j];
+        if (child_pte & PTE_V) {
+          pagetable_t grand_child = (pagetable_t)PTE2PA(child_pte);
+          printf("||   ||idx: %d: pa: %p, flags: %s\n", j, grand_child, "----");
+          for (int k = 0; k < 512; k++) {
+            pte_t grand_child_pte = grand_child[k];
+            if (grand_child_pte & PTE_V) {
+              // L2: 38-30, L1: 29-21, L0: 20-12
+              uint64 va = ((uint64)i << 30) | ((uint64)j << 21) | ((uint64)k << 12);
+              char flags[4];
+              get_pte_flags(flags);
+              printf("||   ||   ||idx: %d: va: %p -> pa: %p, flags: %s\n", k, va, PTE2PA(grand_child_pte), flags);
+            }
+          }
+        }
+      }
+    }
+
+  }
+}
