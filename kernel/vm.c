@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -45,10 +47,43 @@ void kvminit() {
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
+
+pagetable_t u_kvminit(void) {
+  pagetable_t pgtbl = (pagetable_t)kalloc();
+  memset(pgtbl, 0, PGSIZE);
+
+  // uart registers
+  uvmmap(pgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  uvmmap(pgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  // PLIC
+  uvmmap(pgtbl, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  uvmmap(pgtbl, KERNBASE, KERNBASE, (uint64)etext - KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  uvmmap(pgtbl, (uint64)etext, (uint64)etext, PHYSTOP - (uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  uvmmap(pgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+
+  return pgtbl;
+}
+
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
 void kvminithart() {
   w_satp(MAKE_SATP(kernel_pagetable));
+  sfence_vma();
+}
+
+
+void u_kvminithart(pagetable_t pgtbl) {
+  w_satp(MAKE_SATP(pgtbl));
   sfence_vma();
 }
 
@@ -104,6 +139,10 @@ void kvmmap(uint64 va, uint64 pa, uint64 sz, int perm) {
   if (mappages(kernel_pagetable, va, sz, pa, perm) != 0) panic("kvmmap");
 }
 
+void uvmmap(pagetable_t pgtbl, uint64 va, uint64 pa, uint64 sz, int perm) {
+  if (mappages(pgtbl, va, sz, pa, perm) != 0) panic("uvmmap");
+}
+
 // translate a kernel virtual address to
 // a physical address. only needed for
 // addresses on the stack.
@@ -113,7 +152,7 @@ uint64 kvmpa(uint64 va) {
   pte_t *pte;
   uint64 pa;
 
-  pte = walk(kernel_pagetable, va, 0);
+  pte = walk(myproc()->k_pagetable, va, 0);
   if (pte == 0) panic("kvmpa");
   if ((*pte & PTE_V) == 0) panic("kvmpa");
   pa = PTE2PA(*pte);
@@ -239,6 +278,20 @@ void freewalk(pagetable_t pagetable) {
     } else if (pte & PTE_V) {
       panic("freewalk: leaf");
     }
+  }
+  kfree((void *)pagetable);
+}
+
+
+void freekpagtbl(pagetable_t pagetable) {
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      freekpagtbl((pagetable_t)child);
+      pagetable[i] = 0;
+    } 
   }
   kfree((void *)pagetable);
 }
