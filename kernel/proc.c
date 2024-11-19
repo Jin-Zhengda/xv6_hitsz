@@ -139,7 +139,7 @@ static void freeproc(struct proc *p) {
   p->pagetable = 0;
   // if (p->kstack) uvmunmap(p->k_pagetable, p->kstack, 1, 1);
   // p->kstack = 0;
-  if (p->k_pagetable) freekpagtbl(p->k_pagetable);
+  if (p->k_pagetable) freekpgtbl(p->k_pagetable);
   p->k_pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -213,6 +213,8 @@ void userinit(void) {
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
+  sync_pagetable(p->pagetable, p->k_pagetable, 0, p->sz);
+
   p->state = RUNNABLE;
 
   release(&p->lock);
@@ -232,6 +234,7 @@ int growproc(int n) {
   } else if (n < 0) {
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
+  sync_pagetable(p->pagetable, p->k_pagetable, p->sz, sz);
   p->sz = sz;
   return 0;
 }
@@ -270,6 +273,8 @@ int fork(void) {
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
+
+  sync_pagetable(np->pagetable, np->k_pagetable, 0, np->sz);
 
   pid = np->pid;
 
